@@ -20,7 +20,7 @@ exports.basicAuth = function (req, res, next) {
     // Do not require auth for static paths and the API...this could be a bit brittle
     if (req.path.match(/^\/(static|javascripts|pluginfw|api)/)) return cb(true);
 
-    if (req.path.indexOf('/admin') != 0) {
+    if (req.path.toLowerCase().indexOf('/admin') != 0) {
       if (!settings.requireAuthentication) return cb(true);
       if (!settings.requireAuthorization && req.session && req.session.user) return cb(true);
     }
@@ -33,16 +33,19 @@ exports.basicAuth = function (req, res, next) {
   var authenticate = function (cb) {
     // If auth headers are present use them to authenticate...
     if (req.headers.authorization && req.headers.authorization.search('Basic ') === 0) {
-      var userpass = new Buffer(req.headers.authorization.split(' ')[1], 'base64').toString().split(":")
+      var userpass = Buffer.from(req.headers.authorization.split(' ')[1], 'base64').toString().split(":")
       var username = userpass.shift();
       var password = userpass.join(':');
-
-      if (settings.users[username] != undefined && settings.users[username].password == password) {
-        settings.users[username].username = username;
-        req.session.user = settings.users[username];
-        return cb(true);
-      }
-      return hooks.aCallFirst("authenticate", {req: req, res:res, next:next, username: username, password: password}, hookResultMangle(cb));
+      var fallback = function(success) {
+        if (success) return cb(true);
+        if (settings.users[username] != undefined && settings.users[username].password === password) {
+          settings.users[username].username = username;
+          req.session.user = settings.users[username];
+          return cb(true);
+        }
+        return cb(false);
+      };
+      return hooks.aCallFirst("authenticate", {req: req, res:res, next:next, username: username, password: password}, hookResultMangle(fallback));
     }
     hooks.aCallFirst("authenticate", {req: req, res:res, next:next}, hookResultMangle(cb));
   }
@@ -120,10 +123,39 @@ exports.expressConfigure = function (hook_name, args, cb) {
   }
 
   args.app.sessionStore = exports.sessionStore;
-  args.app.use(sessionModule({secret: exports.secret, store: args.app.sessionStore, resave: true, saveUninitialized: true, name: 'express_sid', proxy: true, cookie: { secure: !!settings.ssl }}));
+  args.app.use(sessionModule({
+    secret: exports.secret,
+    store: args.app.sessionStore,
+    resave: false,
+    saveUninitialized: true,
+    name: 'express_sid',
+    proxy: true,
+    cookie: {
+      /*
+       * The automatic express-session mechanism for determining if the
+       * application is being served over ssl is similar to the one used for
+       * setting the language cookie, which check if one of these conditions is
+       * true:
+       *
+       * 1. we are directly serving the nodejs application over SSL, using the
+       *    "ssl" options in settings.json
+       *
+       * 2. we are serving the nodejs application in plaintext, but we are using
+       *    a reverse proxy that terminates SSL for us. In this case, the user
+       *    has to set trustProxy = true in settings.json, and the information
+       *    wheter the application is over SSL or not will be extracted from the
+       *    X-Forwarded-Proto HTTP header
+       *
+       * Please note that this will not be compatible with applications being
+       * served over http and https at the same time.
+       *
+       * reference: https://github.com/expressjs/session/blob/v1.17.0/README.md#cookiesecure
+       */
+      secure: 'auto',
+    }
+  }));
 
   args.app.use(cookieParser(settings.sessionKey, {}));
 
   args.app.use(exports.basicAuth);
 }
-

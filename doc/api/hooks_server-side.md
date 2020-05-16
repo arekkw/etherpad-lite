@@ -91,7 +91,7 @@ Available blocks in `pad.html` are:
  * `timesliderEditbarRight`
  * `modals`
 
- `index.html` blocks:
+`index.html` blocks:
 
  * `indexWrapper` - contains the form for creating new pads
 
@@ -107,6 +107,18 @@ Here you can add custom toolbar items that will be available in the toolbar conf
 Usage examples:
 
 * https://github.com/tiblu/ep_authorship_toggle
+
+## onAccessCheck
+Called from: src/node/db/SecurityManager.js
+
+Things in context:
+
+1. padID - the pad the user wants to access
+2. password - the password the user has given to access the pad
+3. token - the token of the author
+4. sessionCookie - the session the use has
+
+This hook gets called when the access to the concrete pad is being checked. Return `false` to deny access.
 
 ## padCreate
 Called from: src/node/db/Pad.js
